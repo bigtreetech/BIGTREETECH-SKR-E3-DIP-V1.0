@@ -45,8 +45,8 @@
 #if HAS_DRIVER(TMC26X)
   #include <SPI.h>
 
-  #ifdef STM32F7
-    #include "../HAL/HAL_STM32F7/TMC2660.h"
+  #if defined(STM32GENERIC) && defined(STM32F7)
+    #include "../HAL/HAL_STM32_F4_F7/STM32F7/TMC2660.h"
   #else
     #include <TMC26XStepper.h>
   #endif
@@ -497,9 +497,9 @@
   }
 #endif
 
-#if HAS_DRIVER(TMC2208)
+#if HAS_DRIVER(TMC2209)
   template<char AXIS_LETTER, char DRIVER_ID, AxisEnum AXIS_ID>
-  void tmc_init(TMCMarlin<TMC2208Stepper, AXIS_LETTER, DRIVER_ID, AXIS_ID> &st, const uint16_t mA, const uint16_t microsteps, const uint32_t thrs, const bool stealth) {
+  void tmc_init(TMCMarlin<TMC2209Stepper, AXIS_LETTER, DRIVER_ID, AXIS_ID> &st, const uint16_t mA, const uint16_t microsteps, const uint32_t thrs, const bool stealth) {
     TMC2208_n::GCONF_t gconf{0};
     gconf.pdn_disable = true; // Use UART
     gconf.mstep_reg_select = true; // Select microsteps with UART
@@ -545,9 +545,9 @@
   }
 #endif // TMC2208
 
-#if HAS_DRIVER(TMC2209)
+#if HAS_DRIVER(TMC2208)
   template<char AXIS_LETTER, char DRIVER_ID, AxisEnum AXIS_ID>
-  void tmc_init(TMCMarlin<TMC2209Stepper, AXIS_LETTER, DRIVER_ID, AXIS_ID> &st, const uint16_t mA, const uint16_t microsteps, const uint32_t thrs, const bool stealth) {
+  void tmc_init(TMCMarlin<TMC2208Stepper, AXIS_LETTER, DRIVER_ID, AXIS_ID> &st, const uint16_t mA, const uint16_t microsteps, const uint32_t thrs, const bool stealth) {
     TMC2208_n::GCONF_t gconf{0};
     gconf.pdn_disable = true; // Use UART
     gconf.mstep_reg_select = true; // Select microsteps with UART

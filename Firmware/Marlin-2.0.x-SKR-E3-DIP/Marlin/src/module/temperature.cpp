@@ -33,7 +33,7 @@
 #include "../core/language.h"
 #include "../HAL/shared/Delay.h"
 
-#define MAX6675_SEPARATE_SPI EITHER(HEATER_0_USES_MAX6675, HEATER_1_USES_MAX6675) && PIN_EXISTS(MAX6675_SCK, MAX6675_DO)
+#define MAX6675_SEPARATE_SPI (EITHER(HEATER_0_USES_MAX6675, HEATER_1_USES_MAX6675) && PIN_EXISTS(MAX6675_SCK, MAX6675_DO))
 
 #if MAX6675_SEPARATE_SPI
   #include "../libs/private_spi.h"
@@ -460,7 +460,7 @@ temp_range_t Temperature::temp_range[HOTENDS] = ARRAY_BY_HOTENDS(sensor_heater_0
             if (cycles > 0) {
               const long max_pow = GHV(MAX_BED_POWER, PID_MAX);
               bias += (d * (t_high - t_low)) / (t_low + t_high);
-              bias = constrain(bias, 20, max_pow - 20);
+              LIMIT(bias, 20, max_pow - 20);
               d = (bias > max_pow >> 1) ? max_pow - 1 - bias : bias;
 
               SERIAL_ECHOPAIR(MSG_BIAS, bias, MSG_D, d, MSG_T_MIN, min, MSG_T_MAX, max);
@@ -746,9 +746,28 @@ int16_t Temperature::getHeaterPower(const heater_ind_t heater_id) {
 //
 // Temperature Error Handlers
 //
+
+inline void loud_kill(PGM_P const lcd_msg) {
+  Running = false;
+  #if HAS_BUZZER && PIN_EXISTS(BEEPER)
+    for (uint8_t i = 20; i--;) {
+      WRITE(BEEPER_PIN, HIGH); delay(25);
+      WRITE(BEEPER_PIN, LOW); delay(80);
+    }
+    WRITE(BEEPER_PIN, HIGH);
+  #endif
+  kill(lcd_msg);
+}
+
 void Temperature::_temp_error(const heater_ind_t heater, PGM_P const serial_msg, PGM_P const lcd_msg) {
-  static bool killed = false;
-  if (IsRunning()) {
+
+  static uint8_t killed = 0;
+
+  if (IsRunning()
+    #if BOGUS_TEMPERATURE_GRACE_PERIOD
+      && killed == 2
+    #endif
+  ) {
     SERIAL_ERROR_START();
     serialprintPGM(serial_msg);
     SERIAL_ECHOPGM(MSG_STOPPED_HEATER);
@@ -760,27 +779,28 @@ void Temperature::_temp_error(const heater_ind_t heater, PGM_P const serial_msg,
     SERIAL_EOL();
   }
 
-  #if DISABLED(BOGUS_TEMPERATURE_FAILSAFE_OVERRIDE)
-    if (!killed) {
-      Running = false;
-      killed = true;
+  disable_all_heaters(); // always disable (even for bogus temp)
 
-      disable_all_heaters();
-
-      #if HAS_BUZZER && PIN_EXISTS(BEEPER)
-        for (uint8_t i = 20; i--;) {
-          WRITE(BEEPER_PIN, HIGH); delay(25);
-          WRITE(BEEPER_PIN, LOW); delay(80);
-        }
-        WRITE(BEEPER_PIN, HIGH);
-      #endif
-
-      kill(lcd_msg);
+  #if BOGUS_TEMPERATURE_GRACE_PERIOD
+    const millis_t ms = millis();
+    static millis_t expire_ms;
+    switch (killed) {
+      case 0:
+        expire_ms = ms + BOGUS_TEMPERATURE_GRACE_PERIOD;
+        ++killed;
+        break;
+      case 1:
+        if (ELAPSED(ms, expire_ms)) ++killed;
+        break;
+      case 2:
+        loud_kill(lcd_msg);
+        ++killed;
+        break;
     }
-    else
-      disable_all_heaters(); // paranoia
-  #else
+  #elif defined(BOGUS_TEMPERATURE_GRACE_PERIOD)
     UNUSED(killed);
+  #else
+    if (!killed) { killed = 1; loud_kill(lcd_msg); }
   #endif
 }
 
@@ -854,7 +874,7 @@ float Temperature::get_pid_output_hotend(const uint8_t e) {
           }
         #endif // PID_EXTRUSION_SCALING
 
-        pid_output = constrain(pid_output, 0, PID_MAX);
+        LIMIT(pid_output, 0, PID_MAX);
       }
       temp_dState[ee] = temp_hotend[ee].current;
 
@@ -957,10 +977,7 @@ void Temperature::manage_heater() {
 
   #if EARLY_WATCHDOG
     // If thermal manager is still not running, make sure to at least reset the watchdog!
-    if (!inited) {
-      watchdog_reset();
-      return;
-    }
+    if (!inited) return watchdog_reset();
   #endif
 
   #if BOTH(PROBING_HEATERS_OFF, BED_LIMIT_SWITCHING)
@@ -984,8 +1001,6 @@ void Temperature::manage_heater() {
     if (temp_hotend[1].current > _MIN(HEATER_1_MAXTEMP, HEATER_1_MAX6675_TMAX - 1.0)) max_temp_error(H_E1);
     if (temp_hotend[1].current < _MAX(HEATER_1_MINTEMP, HEATER_1_MAX6675_TMIN + .01)) min_temp_error(H_E1);
   #endif
-
-  #define HAS_THERMAL_PROTECTION (ENABLED(THERMAL_PROTECTION_HOTENDS) || HAS_THERMALLY_PROTECTED_BED || ENABLED(THERMAL_PROTECTION_CHAMBER))
 
   #if HAS_THERMAL_PROTECTION || DISABLED(PIDTEMPBED) || HAS_AUTO_FAN || HEATER_IDLE_HANDLER
     millis_t ms = millis();
@@ -1050,7 +1065,7 @@ void Temperature::manage_heater() {
     if (filament_sensor) {
       meas_shift_index = filwidth_delay_index[0] - meas_delay_cm;
       if (meas_shift_index < 0) meas_shift_index += MAX_MEASUREMENT_DELAY + 1;  //loop around buffer if needed
-      meas_shift_index = constrain(meas_shift_index, 0, MAX_MEASUREMENT_DELAY);
+      LIMIT(meas_shift_index, 0, MAX_MEASUREMENT_DELAY);
       planner.calculate_volumetric_for_width_sensor(measurement_delay[meas_shift_index]);
     }
   #endif // FILAMENT_WIDTH_SENSOR
@@ -1522,7 +1537,11 @@ void Temperature::updateTemperaturesFromRawValues() {
 #endif
 
 // Init fans according to whether they're native PWM or Software PWM
-#define _INIT_SOFT_FAN(P) OUT_WRITE(P, FAN_INVERTING ? LOW : HIGH)
+#ifdef ALFAWISE_UX0
+  #define _INIT_SOFT_FAN(P) OUT_WRITE_OD(P, FAN_INVERTING ? LOW : HIGH)
+#else
+  #define _INIT_SOFT_FAN(P) OUT_WRITE(P, FAN_INVERTING ? LOW : HIGH)
+#endif
 #if ENABLED(FAN_SOFT_PWM)
   #define _INIT_FAN_PIN(P) _INIT_SOFT_FAN(P)
 #else
@@ -1544,7 +1563,6 @@ void Temperature::updateTemperaturesFromRawValues() {
 #else
   #define INIT_CHAMBER_AUTO_FAN_PIN(P) SET_OUTPUT(P)
 #endif
-
 
 /**
  * Initialize the temperature manager
@@ -1572,8 +1590,13 @@ void Temperature::init() {
   #endif
 
   #if HAS_HEATER_0
-    OUT_WRITE(HEATER_0_PIN, HEATER_0_INVERTING);
+    #ifdef ALFAWISE_UX0
+      OUT_WRITE_OD(HEATER_0_PIN, HEATER_0_INVERTING);
+    #else
+      OUT_WRITE(HEATER_0_PIN, HEATER_0_INVERTING);
+    #endif
   #endif
+
   #if HAS_HEATER_1
     OUT_WRITE(HEATER_1_PIN, HEATER_1_INVERTING);
   #endif
@@ -1589,9 +1612,15 @@ void Temperature::init() {
   #if HAS_HEATER_5
     OUT_WRITE(HEATER_5_PIN, HEATER_5_INVERTING);
   #endif
+
   #if HAS_HEATED_BED
-    OUT_WRITE(HEATER_BED_PIN, HEATER_BED_INVERTING);
+    #ifdef ALFAWISE_UX0
+      OUT_WRITE_OD(HEATER_BED_PIN, HEATER_BED_INVERTING);
+    #else
+      OUT_WRITE(HEATER_BED_PIN, HEATER_BED_INVERTING);
+    #endif
   #endif
+
   #if HAS_HEATED_CHAMBER
     OUT_WRITE(HEATER_CHAMBER_PIN, HEATER_CHAMBER_INVERTING);
   #endif
@@ -1654,6 +1683,9 @@ void Temperature::init() {
   #endif
   #if ENABLED(FILAMENT_WIDTH_SENSOR)
     HAL_ANALOG_SELECT(FILWIDTH_PIN);
+  #endif
+  #if HAS_ADC_BUTTONS
+    HAL_ANALOG_SELECT(ADC_KEYPAD_PIN);
   #endif
 
   HAL_timer_start(TEMP_TIMER_NUM, TEMP_TIMER_FREQUENCY);
@@ -1910,7 +1942,7 @@ void Temperature::init() {
     }
   }
 
-#endif // THERMAL_PROTECTION_HOTENDS || THERMAL_PROTECTION_BED || ENABLED(THERMAL_PROTECTION_CHAMBER)
+#endif // HAS_THERMAL_PROTECTION
 
 void Temperature::disable_all_heaters() {
 
@@ -2891,7 +2923,7 @@ void Temperature::isr() {
 
   #endif // AUTO_REPORT_TEMPERATURES
 
-  #if EITHER(ULTRA_LCD, EXTENSIBLE_UI)
+  #if HAS_DISPLAY
     void Temperature::set_heating_message(const uint8_t e) {
       const bool heating = isHeatingHotend(e);
       #if HOTENDS > 1
