@@ -164,7 +164,7 @@
  *                 EXP1
  */
 #if HAS_SPI_LCD
-  #define BEEPER_PIN       PA15
+  //#define BEEPER_PIN       PA15
   #define BTN_ENC          PB6
 
   #if ENABLED(CR10_STOCKDISPLAY)
