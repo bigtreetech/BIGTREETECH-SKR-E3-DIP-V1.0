@@ -43,7 +43,7 @@
   #error "Archim2 requires Software SPI. Enable TMC_USE_SW_SPI in Configuration_adv.h."
 #endif
 
-#define BOARD_NAME "Archim 2.0"
+#define BOARD_INFO_NAME "Archim 2.0"
 
 //
 // Items marked * have been altered from Archim v1.0
@@ -214,6 +214,10 @@
 #define GPIO_PA18_J20_21   71   // D71 PA17 (Header J20 21)
 #define GPIO_PA17_J20_22   70   // D70 PA17 (Header J20 22)
 
+// Case Light
+
+#define CASE_LIGHT_PIN     GPIO_PB1_J20_5
+
 // 2MB SPI Flash
 #define SPI_FLASH_SS       52   // D52 PB21
 
@@ -231,7 +235,7 @@
 //
 // LCD / Controller
 //
-#if HAS_SPI_LCD
+#if HAS_SPI_LCD || TOUCH_UI_ULTIPANEL || ENABLED(TOUCH_UI_FTDI_EVE)
   #define BEEPER_PIN       23   // D24 PA15_CTS1
   #define LCD_PINS_RS      17   // D17 PA12_RXD1
   #define LCD_PINS_ENABLE  24   // D23 PA14_RTS1
@@ -242,10 +246,10 @@
 
   #define SD_DETECT_PIN     2   // D2  PB25_TIOA0
 
-  #if ENABLED(NEWPANEL)
+  #if ENABLED(ULTIPANEL) || TOUCH_UI_ULTIPANEL || ENABLED(TOUCH_UI_FTDI_EVE)
     // Buttons on AUX-2
     #define BTN_EN1        60   // D60 PA3_TIOB1
     #define BTN_EN2        13   // D13 PB27_TIOB0
     #define BTN_ENC        16   // D16 PA13_TXD1 // the click
-  #endif // NEWPANEL
+  #endif // ULTIPANEL || TOUCH_UI_ULTIPANEL
 #endif // HAS_SPI_LCD

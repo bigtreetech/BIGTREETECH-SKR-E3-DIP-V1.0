@@ -29,8 +29,8 @@
   #error "Oops! Select 'Arduino/Genuino Mega or Mega 2560' in 'Tools > Board.'"
 #endif
 
-#ifndef BOARD_NAME
-  #define BOARD_NAME "GT2560 V3.0"
+#ifndef BOARD_INFO_NAME
+  #define BOARD_INFO_NAME "GT2560 V3.0"
 #endif
 
 //
@@ -111,6 +111,10 @@
 #define E1_STEP_PIN        49
 #define E1_DIR_PIN         47
 #define E1_ENABLE_PIN      48
+
+#define E2_STEP_PIN        43
+#define E2_DIR_PIN         45
+#define E2_ENABLE_PIN      41
 
 //
 // Temperature Sensors
